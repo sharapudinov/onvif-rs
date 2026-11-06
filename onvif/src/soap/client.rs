@@ -3,6 +3,7 @@
 use crate::soap::{
     self,
     auth::{digest::Digest, username_token::UsernameToken},
+    fault::{error_for_failed_status, fault_error},
 };
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -259,8 +260,10 @@ impl Client {
                 .map_err(|e| Error::Protocol(e.to_string()))
                 .and_then(|text| {
                     trace!("Response body: {text}");
-                    let response =
-                        soap::unsoap(&text).map_err(|e| Error::Protocol(format!("{e:?}")))?;
+                    let response = soap::unsoap(&text).map_err(|e| match e {
+                        soap::Error::Fault(fault) => fault_error(*fault, status),
+                        e => Error::Protocol(format!("{e:?}")),
+                    })?;
                     if let Some(response_patcher) = &self.config.response_patcher {
                         match response_patcher(&response) {
                             Ok(patched) => {
@@ -304,16 +307,10 @@ impl Client {
             self.request_recursive(message, &new_url, auth_type, redirections + 1)
                 .await
         } else {
-            if let Ok(text) = response.text().await {
-                trace!("Got HTTP error with body: {text}");
-                if let Err(soap::Error::Fault(f)) = soap::unsoap(&text) {
-                    if f.is_unauthorized() {
-                        return Err(Error::Authorization("Unauthorized".to_string()));
-                    }
-                }
-            }
+            let text = response.text().await.unwrap_or_default();
+            trace!("Got HTTP error with body: {text}");
 
-            Err(Error::Other(status.to_string()))
+            Err(error_for_failed_status(status, &text))
         }
     }
 

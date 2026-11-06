@@ -1,6 +1,6 @@
 use super::*;
 use crate::utils::xml_eq::assert_xml_eq;
-use schema::soap_envelope::{FaultcodeEnum, Reasontext, Subcode};
+use schema::transport::FaultDetailElement;
 
 #[test]
 fn test_soap() {
@@ -95,28 +95,31 @@ fn test_get_fault() {
 
     let envelope = xmltree::Element::parse(response.as_bytes()).unwrap();
 
-    let fault = deserialize_fault(&envelope).unwrap();
+    let fault = fault::parse_fault(&envelope).unwrap();
 
+    assert_eq!(fault.code, "tns:DataEncodingUnknown");
     assert_eq!(
-        fault.code.value,
-        FaultcodeEnum("tns:DataEncodingUnknown".to_string())
+        fault.subcodes,
+        vec!["ter:fault subcode", "ter:fault subcode"]
     );
+    assert_eq!(fault.reasons, vec!["fault reason 1", "fault reason 2"]);
     assert_eq!(
-        fault.code.subcode,
-        Some(Subcode {
-            value: "ter:fault subcode".to_string(),
-            // subcode: Vec::new()
-        })
+        fault.detail_elements,
+        vec![FaultDetailElement {
+            namespace: Some("http://www.w3.org/2003/05/soap-envelope".to_string()),
+            name: "Text".to_string()
+        }]
     );
-    assert_eq!(
-        fault.reason.text,
-        vec![
-            Reasontext {
-                lang: "en".to_string()
-            },
-            Reasontext {
-                lang: "en".to_string()
-            }
-        ]
-    );
+    assert_eq!(fault.http_status, None);
+}
+
+#[test]
+fn a_fault_without_a_code_value_is_rejected() {
+    let response = r#"<s:Fault xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Reason><s:Text xml:lang="en">x</s:Text></s:Reason></s:Fault>"#;
+    let envelope = xmltree::Element::parse(response.as_bytes()).unwrap();
+
+    assert!(matches!(
+        fault::parse_fault(&envelope),
+        Err(Error::InternalError(_))
+    ));
 }

@@ -1,10 +1,13 @@
 pub mod auth;
 pub mod client;
 #[cfg(test)]
+mod client_tests;
+mod fault;
+#[cfg(test)]
 mod tests;
 
 use auth::username_token::UsernameToken;
-use schema::soap_envelope;
+use schema::transport::SoapFault;
 use xmltree::{Element, Namespace, XMLNode};
 
 const SOAP_URI: &str = "http://www.w3.org/2003/05/soap-envelope";
@@ -15,7 +18,7 @@ pub enum Error {
     EnvelopeNotFound,
     BodyNotFound,
     BodyIsEmpty,
-    Fault(Box<soap_envelope::Fault>),
+    Fault(Box<SoapFault>),
     InternalError(String),
 }
 
@@ -62,7 +65,7 @@ pub fn unsoap(xml: &str) -> Result<String, Error> {
     let body = root.get_child("Body").ok_or(Error::BodyNotFound)?;
 
     if let Some(fault) = body.get_child("Fault") {
-        let fault = deserialize_fault(fault)?;
+        let fault = fault::parse_fault(fault)?;
         return Err(Error::Fault(Box::new(fault)));
     }
 
@@ -84,9 +87,4 @@ fn xml_element_to_string(el: &Element) -> Result<String, Error> {
     el.write(&mut out)
         .map_err(|_| Error::InternalError("Could not write XML element".to_string()))?;
     String::from_utf8(out).map_err(|e| Error::InternalError(e.to_string()))
-}
-
-fn deserialize_fault(envelope: &Element) -> Result<soap_envelope::Fault, Error> {
-    let string = xml_element_to_string(envelope)?;
-    yaserde::de::from_str(&string).map_err(Error::InternalError)
 }

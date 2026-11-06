@@ -1,6 +1,10 @@
+mod fault;
+
 use async_trait::async_trait;
 use thiserror::Error;
 use yaserde::{YaDeserialize, YaSerialize};
+
+pub use fault::{local_name, FaultDetailElement, SoapFault};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -16,6 +20,9 @@ pub enum Error {
     Connection(String),
     #[error("Timeout occurred: {0}")]
     Timeout(String),
+    /// The device answered with a SOAP Fault (in a 2xx or a non-2xx response).
+    #[error("SOAP fault: {0}")]
+    Fault(SoapFault),
     #[error("Protocol error: {0}")]
     Protocol(String),
     #[error("Other: {0}")]
